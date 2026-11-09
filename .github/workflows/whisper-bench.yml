@@ -1,0 +1,36 @@
+name: whisper-bench
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: whisper.cpp at an exact tag
+        run: git clone --depth 1 --branch v1.9.5 https://github.com/ggml-org/whisper.cpp vendor/whisper.cpp
+      - name: build xcframework (Metal on, Core ML off)
+        run: cd vendor/whisper.cpp && bash build-xcframework.sh
+      - name: model and test wav (public)
+        run: |
+          mkdir -p Resources
+          curl -fL -o Resources/ggml-small.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
+          cp vendor/whisper.cpp/samples/jfk.wav Resources/jfk.wav
+          ls -la Resources
+      - name: project
+        run: |
+          cp -R $(find vendor/whisper.cpp -maxdepth 3 -name whisper.xcframework | head -1) .
+          ls whisper.xcframework; find whisper.xcframework -name whisper -type f | head -3
+          BIN=$(find whisper.xcframework/ios-arm64 -name whisper -type f | head -1)
+          file "$BIN"
+          if file "$BIN" | grep -qi "dynamically linked"; then F=true; else F=false; fi
+          echo "embed=$F"
+          sed -i '' "s/EMBED_FLAG/$F/" project.yml
+          brew install xcodegen
+          xcodegen
+      - name: build unsigned
+        run: xcodebuild -project WhisperBench.xcodeproj -scheme WhisperBench -sdk iphoneos -configuration Release CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" -derivedDataPath dd build | tail -40
+      - name: ipa
+        run: |
+          mkdir Payload && cp -R dd/Build/Products/Release-iphoneos/WhisperBench.app Payload/ && zip -qry WhisperBench.ipa Payload && ls -la WhisperBench.ipa
+      - uses: actions/upload-artifact@v4
+        with: { name: WhisperBench-ipa, path: WhisperBench.ipa, compression-level: 0 }

@@ -1,0 +1,3 @@
+whisper.cpp keeps logits only for the LAST token of a `whisper_decode` call: `whisper_batch_prep_legacy` sets `batch.logits[n_tokens-1] = 1` and 0 elsewhere (src/whisper.cpp master, around line 528), and `whisper_decode_internal` copies only the flagged rows (around line 3041).
+MODE T of Bench.swift needs no patch. For MODE B (a chain of tokens in one call) vendor whisper.cpp and set `batch.logits[i] = 1` for every i in that loop (one line); `whisper_get_logits` then returns n_tokens x n_vocab floats.
+Prefix sharing needs no patch: `whisper_decode(ctx, tokens, n, n_past, threads)` attends to KV positions < n_past + n, so after a branch point the next branch simply starts at that n_past and overwrites the stale entries.
